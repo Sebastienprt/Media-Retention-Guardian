@@ -10,7 +10,7 @@ using MediaBrowser.Model.Serialization;
 namespace Jellyfin.Plugin.Template;
 
 /// <summary>
-/// The main plugin.
+/// Main entry point for the media retention plugin.
 /// </summary>
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
@@ -25,16 +25,19 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         Instance = this;
     }
 
-    /// <inheritdoc />
-    public override string Name => "Template";
-
-    /// <inheritdoc />
-    public override Guid Id => Guid.Parse("eb5d7894-8eef-4b36-aa6f-5d124e828ce1");
-
     /// <summary>
     /// Gets the current plugin instance.
     /// </summary>
     public static Plugin? Instance { get; private set; }
+
+    /// <inheritdoc />
+    public override string Name => "Media Retention";
+
+    /// <inheritdoc />
+    public override string Description => "Automatically purge library items that are older than the configured retention period.";
+
+    /// <inheritdoc />
+    public override Guid Id => Guid.Parse("5c5422c9-396b-4dec-87fa-a8a20f65c549");
 
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
@@ -47,5 +50,39 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace)
             }
         ];
+    }
+
+    /// <summary>
+    /// Adds a deletion record to the rolling log and persists the configuration.
+    /// </summary>
+    /// <param name="record">The deletion record.</param>
+    public void AppendDeletionRecord(DeletionRecord record)
+    {
+        var configuration = Configuration;
+        configuration.DeletionLog ??= new List<DeletionRecord>();
+        configuration.DeletionLog.Insert(0, record);
+        while (configuration.DeletionLog.Count > 10)
+        {
+            configuration.DeletionLog.RemoveAt(configuration.DeletionLog.Count - 1);
+        }
+
+        SaveConfiguration();
+    }
+
+    /// <summary>
+    /// Persists retention rules returned from the configuration UI.
+    /// </summary>
+    /// <param name="rules">The updated set of rules.</param>
+    public void UpdateRetentionRules(IList<RetentionRule> rules)
+    {
+        var configuration = Configuration;
+        configuration.RetentionRules ??= new List<RetentionRule>();
+        configuration.RetentionRules.Clear();
+        foreach (var rule in rules)
+        {
+            configuration.RetentionRules.Add(rule);
+        }
+
+        SaveConfiguration();
     }
 }

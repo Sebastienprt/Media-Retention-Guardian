@@ -1,79 +1,222 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>Template</title>
+    <title>Media Retention</title>
 </head>
 <body>
-    <div id="TemplateConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div id="MediaRetentionConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
         <div data-role="content">
             <div class="content-primary">
-                <form id="TemplateConfigForm">
-                    <div class="selectContainer">
-                        <label class="selectLabel" for="Options">Several Options</label>
-                        <select is="emby-select" id="Options" name="Options" class="emby-select-withcolor emby-select">
-                            <option id="optOneOption" value="OneOption">One Option</option>
-                            <option id="optAnotherOption" value="AnotherOption">Another Option</option>
-                        </select>
+                <form id="MediaRetentionConfigForm" class="configForm">
+                    <div class="sectionTitle">
+                        Gestion de la duree de conservation
                     </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="AnInteger">An Integer</label>
-                        <input id="AnInteger" name="AnInteger" type="number" is="emby-input" min="0" />
-                        <div class="fieldDescription">A Description</div>
+                    <div id="rulesContainer" class="inputContainer"></div>
+                    <div id="noFoldersMessage" class="fieldDescription" style="display:none;">
+                        Aucun dossier n'a ete trouve. Verifiez votre configuration de bibliotheque Jellyfin.
                     </div>
-                    <div class="checkboxContainer checkboxContainer-withDescription">
-                        <label class="emby-checkbox-label">
-                            <input id="TrueFalseSetting" name="TrueFalseCheckBox" type="checkbox" is="emby-checkbox" />
-                            <span>A Checkbox</span>
-                        </label>
+                    <div class="fieldDescription">
+                        Ajoutez des dossiers Jellyfin et definissez une duree de conservation en jours. Les elements plus anciens seront supprimes automatiquement.
                     </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="AString">A String</label>
-                        <input id="AString" name="AString" type="text" is="emby-input" />
-                        <div class="fieldDescription">Another Description</div>
-                    </div>
-                    <div>
+                    <button type="button" id="addRuleButton" is="emby-button" class="raised block">
+                        <span>Ajouter un dossier</span>
+                    </button>
+                    <div class="actions">
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
-                            <span>Save</span>
+                            <span>Sauvegarder</span>
                         </button>
                     </div>
                 </form>
+                <div class="sectionTitle">
+                    Dernieres suppressions
+                </div>
+                <div id="deletionLogContainer" class="deletionLog"></div>
             </div>
         </div>
-        <script type="text/javascript">
-            var TemplateConfig = {
-                pluginUniqueId: 'eb5d7894-8eef-4b36-aa6f-5d124e828ce1'
-            };
+    </div>
+    <script type="text/javascript">
+        (function () {
+            const pluginId = '5c5422c9-396b-4dec-87fa-a8a20f65c549';
+            let availableFolders = [];
 
-            document.querySelector('#TemplateConfigPage')
-                .addEventListener('pageshow', function() {
-                    Dashboard.showLoadingMsg();
-                    ApiClient.getPluginConfiguration(TemplateConfig.pluginUniqueId).then(function (config) {
-                        document.querySelector('#Options').value = config.Options;
-                        document.querySelector('#AnInteger').value = config.AnInteger;
-                        document.querySelector('#TrueFalseSetting').checked = config.TrueFalseSetting;
-                        document.querySelector('#AString').value = config.AString;
-                        Dashboard.hideLoadingMsg();
-                    });
+            const pageElement = document.querySelector('#MediaRetentionConfigPage');
+            const formElement = document.querySelector('#MediaRetentionConfigForm');
+            const rulesContainer = document.querySelector('#rulesContainer');
+            const deletionLogContainer = document.querySelector('#deletionLogContainer');
+            const addRuleButton = document.querySelector('#addRuleButton');
+            const noFoldersMessage = document.querySelector('#noFoldersMessage');
+
+            function buildFolderOptions(select, selectedId) {
+                select.innerHTML = '';
+                availableFolders.forEach(folder => {
+                    const option = document.createElement('option');
+                    option.value = folder.ItemId;
+                    option.textContent = folder.Name;
+                    if (folder.ItemId === selectedId) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
                 });
 
-            document.querySelector('#TemplateConfigForm')
-                .addEventListener('submit', function(e) {
+                if (selectedId && !availableFolders.some(f => f.ItemId === selectedId)) {
+                    const option = document.createElement('option');
+                    option.value = selectedId;
+                    option.textContent = 'Dossier introuvable';
+                    option.selected = true;
+                    select.appendChild(option);
+                }
+            }
+
+            function createRuleRow(rule) {
+                const row = document.createElement('div');
+                row.classList.add('ruleRow');
+
+                const select = document.createElement('select');
+                select.setAttribute('is', 'emby-select');
+                select.classList.add('emby-select-withcolor', 'emby-select');
+                buildFolderOptions(select, rule.FolderId);
+
+                const daysInput = document.createElement('input');
+                daysInput.type = 'number';
+                daysInput.min = '1';
+                daysInput.required = true;
+                daysInput.setAttribute('is', 'emby-input');
+                daysInput.value = rule.RetentionDays > 0 ? rule.RetentionDays : 30;
+
+                const removeButton = document.createElement('button');
+                removeButton.type = 'button';
+                removeButton.setAttribute('is', 'emby-button');
+                removeButton.classList.add('emby-button', 'raised');
+                removeButton.innerHTML = '<span>Supprimer</span>';
+
+                removeButton.addEventListener('click', function () {
+                    row.remove();
+                });
+
+                const selectLabel = document.createElement('label');
+                selectLabel.classList.add('selectLabel');
+                selectLabel.textContent = 'Dossier Jellyfin';
+
+                const inputLabel = document.createElement('label');
+                inputLabel.classList.add('inputLabel');
+                inputLabel.textContent = 'Duree en jours';
+
+                row.appendChild(selectLabel);
+                row.appendChild(select);
+                row.appendChild(inputLabel);
+                row.appendChild(daysInput);
+                row.appendChild(removeButton);
+
+                return row;
+            }
+
+            function toggleEmptyState() {
+                const hasFolders = availableFolders.length > 0;
+                noFoldersMessage.style.display = hasFolders ? 'none' : 'block';
+                addRuleButton.disabled = !hasFolders;
+                addRuleButton.classList.toggle('disabled', !hasFolders);
+            }
+
+            function renderDeletionLog(entries) {
+                if (!entries || !entries.length) {
+                    deletionLogContainer.textContent = 'Aucune suppression recente.';
+                    return;
+                }
+
+                const list = document.createElement('ul');
+                list.classList.add('deletionLogList');
+
+                entries.forEach(entry => {
+                    const item = document.createElement('li');
+                    const deletedAt = new Date(entry.DeletedAt).toLocaleString();
+                    item.textContent = `${entry.Name} (${entry.MediaType}) supprime le ${deletedAt}`;
+                    list.appendChild(item);
+                });
+
+                deletionLogContainer.innerHTML = '';
+                deletionLogContainer.appendChild(list);
+            }
+
+            function loadConfig() {
                 Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(TemplateConfig.pluginUniqueId).then(function (config) {
-                    config.Options = document.querySelector('#Options').value;
-                    config.AnInteger = document.querySelector('#AnInteger').value;
-                    config.TrueFalseSetting = document.querySelector('#TrueFalseSetting').checked;
-                    config.AString = document.querySelector('#AString').value;
-                    ApiClient.updatePluginConfiguration(TemplateConfig.pluginUniqueId, config).then(function (result) {
-                        Dashboard.processPluginConfigurationUpdateResult(result);
+                return Promise.all([
+                    ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')),
+                    ApiClient.getPluginConfiguration(pluginId)
+                ]).then(results => {
+                    availableFolders = results[0] || [];
+                    const config = results[1];
+
+                    toggleEmptyState();
+
+                    rulesContainer.innerHTML = '';
+                    (config.RetentionRules || []).forEach(rule => {
+                        const row = createRuleRow(rule);
+                        rulesContainer.appendChild(row);
                     });
+
+                    if (rulesContainer.children.length === 0 && availableFolders.length) {
+                        const row = createRuleRow({ FolderId: availableFolders[0].ItemId, RetentionDays: 30 });
+                        rulesContainer.appendChild(row);
+                    }
+
+                    renderDeletionLog(config.DeletionLog);
+                    Dashboard.hideLoadingMsg();
+                }).catch(() => {
+                    Dashboard.hideLoadingMsg();
+                });
+            }
+
+            pageElement.addEventListener('pageshow', function () {
+                loadConfig();
+            });
+
+            addRuleButton.addEventListener('click', function () {
+                if (!availableFolders.length) {
+                    Dashboard.alert({
+                        message: 'Ajoutez d\'abord un dossier a la bibliotheque Jellyfin.'
+                    });
+                    return;
+                }
+                const row = createRuleRow({ FolderId: availableFolders[0].ItemId, RetentionDays: 30 });
+                rulesContainer.appendChild(row);
+            });
+
+            formElement.addEventListener('submit', function (e) {
+                e.preventDefault();
+                Dashboard.showLoadingMsg();
+
+                ApiClient.getPluginConfiguration(pluginId).then(config => {
+                    const rows = rulesContainer.querySelectorAll('.ruleRow');
+                    const nextRules = [];
+                    rows.forEach(row => {
+                        const select = row.querySelector('select');
+                        const input = row.querySelector('input');
+                        const folder = availableFolders.find(f => f.ItemId === select.value);
+                        const retention = parseInt(input.value, 10);
+                        if (!select.value || Number.isNaN(retention) || retention <= 0) {
+                            return;
+                        }
+
+                        nextRules.push({
+                            FolderId: select.value,
+                            FolderName: folder ? folder.Name : (select.options[select.selectedIndex] ? select.options[select.selectedIndex].textContent : 'Dossier'),
+                            RetentionDays: retention
+                        });
+                    });
+
+                    config.RetentionRules = nextRules;
+                    return ApiClient.updatePluginConfiguration(pluginId, config).then(result => {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                        return loadConfig();
+                    });
+                }).finally(() => {
+                    Dashboard.hideLoadingMsg();
                 });
 
-                e.preventDefault();
                 return false;
             });
-        </script>
-    </div>
+        }());
+    </script>
 </body>
 </html>

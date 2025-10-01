@@ -1,57 +1,23 @@
+using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using MediaBrowser.Model.Plugins;
 
 namespace Jellyfin.Plugin.Template.Configuration;
 
 /// <summary>
-/// The configuration options.
-/// </summary>
-public enum SomeOptions
-{
-    /// <summary>
-    /// Option one.
-    /// </summary>
-    OneOption,
-
-    /// <summary>
-    /// Second option.
-    /// </summary>
-    AnotherOption
-}
-
-/// <summary>
-/// Plugin configuration.
+/// Configuration container for the media retention plugin.
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="PluginConfiguration"/> class.
+    /// Gets or sets the retention rules mapped by library folder.
     /// </summary>
-    public PluginConfiguration()
-    {
-        // set default options here
-        Options = SomeOptions.AnotherOption;
-        TrueFalseSetting = true;
-        AnInteger = 2;
-        AString = "string";
-    }
+    [SuppressMessage("Usage", "CA2227:Collection properties should be read only", Justification = "Collection is serialized/deserialized by the Jellyfin configuration infrastructure.")]
+    public IList<RetentionRule> RetentionRules { get; set; } = new List<RetentionRule>();
 
     /// <summary>
-    /// Gets or sets a value indicating whether some true or false setting is enabled..
+    /// Gets or sets the rolling log of deletions used by the UI.
     /// </summary>
-    public bool TrueFalseSetting { get; set; }
-
-    /// <summary>
-    /// Gets or sets an integer setting.
-    /// </summary>
-    public int AnInteger { get; set; }
-
-    /// <summary>
-    /// Gets or sets a string setting.
-    /// </summary>
-    public string AString { get; set; }
-
-    /// <summary>
-    /// Gets or sets an enum option.
-    /// </summary>
-    public SomeOptions Options { get; set; }
+    [SuppressMessage("Usage", "CA2227:Collection properties should be read only", Justification = "Collection is serialized/deserialized by the Jellyfin configuration infrastructure.")]
+    public IList<DeletionRecord> DeletionLog { get; set; } = new List<DeletionRecord>();
 }
