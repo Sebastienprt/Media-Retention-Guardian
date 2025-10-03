@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # Autorise l'écriture dans les Releases
 
 jobs:
   build:
@@ -23,10 +23,10 @@ jobs:
           dotnet-version: 8.0.x
 
       # 3. Vérifier que jq est dispo
-      - name: Installer jq (si besoin)
+      - name: Installer jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      # 4. Récupérer la version depuis le tag (ex: v0.2.0)
+      # 4. Extraire la version depuis le tag (ex: v0.2.0)
       - name: Extraire la version depuis le tag
         id: version
         run: |
@@ -57,7 +57,7 @@ jobs:
         run: |
           jq --arg v "${{ steps.version.outputs.version }}" \
              --arg c "${{ steps.checksum.outputs.checksum }}" \
-             '.[] |= .versions = (.versions + [{
+             '.[] |= (.versions + [{
                 "version": $v,
                 "targetAbi": "10.10.0.0",
                 "framework": "net8.0",
