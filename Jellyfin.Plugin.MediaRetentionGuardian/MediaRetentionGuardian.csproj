@@ -40,6 +40,11 @@
       <Pack>true</Pack>
       <PackagePath>.</PackagePath>
     </None>
+    <None Include="..\meta.json" Link="meta.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>.</PackagePath>
+    </None>
   </ItemGroup>
 
 </Project>

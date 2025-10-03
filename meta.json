@@ -1,0 +1,18 @@
+{
+  "category": "Maintenance",
+  "changelog": "- Initial multi-dossier retention support.",
+  "description": "Automatise la suppression des fichiers dépassant la durée de rétention configurée.",
+  "guid": "5c5422c9-396b-4dec-87fa-a8a20f65c549",
+  "name": "Media Retention Guardian",
+  "overview": "Automatise la purge des fichiers après la durée de conservation définie.",
+  "owner": "seb",
+  "targetAbi": "10.10.0.0",
+  "timestamp": "{{BUILD_TIMESTAMP}}",
+  "version": "{{PLUGIN_VERSION}}",
+  "status": "Active",
+  "autoUpdate": true,
+  "imagePath": "thumb.png",
+  "assemblies": [
+    "MediaRetentionGuardian.dll"
+  ]
+}
