@@ -52,12 +52,12 @@ jobs:
           CHECKSUM=$(md5sum MediaRetentionGuardian_v${{ steps.version.outputs.version }}.zip | awk '{print $1}')
           echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
 
-      # 9. Mettre à jour le manifest.json
+      # 9. Mettre à jour le manifest.json (ajout de version dans l'objet plugin)
       - name: Mettre à jour manifest.json
         run: |
           jq --arg v "${{ steps.version.outputs.version }}" \
              --arg c "${{ steps.checksum.outputs.checksum }}" \
-             '.[] |= (.versions + [{
+             '.[] |= (.versions += [{
                 "version": $v,
                 "targetAbi": "10.10.0.0",
                 "framework": "net8.0",
