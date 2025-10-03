@@ -1,0 +1,34 @@
+name: Build & Package
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Extraire la version depuis build.yaml
+        id: version
+        run: |
+          VERSION=$(grep '^version:' build.yaml | awk '{print $2}' | tr -d '"')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Rendre le script exécutable
+        run: chmod +x scripts/package.sh
+
+      - name: Construire le zip minimal
+        run: scripts/package.sh "${{ steps.version.outputs.version }}"
+
+      - name: Publier l’artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaRetentionGuardian
+          path: MediaRetentionGuardian_v${{ steps.version.outputs.version }}.zip
