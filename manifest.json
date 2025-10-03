@@ -12,7 +12,7 @@
         "targetAbi": "10.10.0.0",
         "framework": "net8.0",
         "changelog": "- Initial multi-dossier retention support.",
-        "sourceUrl": "https://raw.githubusercontent.com/Sebastienprt/Media-Retention-Guardian/main/MediaRetentionGuardian_v0.1.0.zip",
+        "sourceUrl": "https://github.com/Sebastienprt/Media-Retention-Guardian/releases/download/v0.1.0/MediaRetentionGuardian_v0.1.0.zip",
         "thumb": "https://raw.githubusercontent.com/Sebastienprt/Media-Retention-Guardian/main/Jellyfin.Plugin.MediaRetentionGuardian/thumb.png",
         "checksum": "8952DE3937B819757F7F27DAB5777A16"
       }

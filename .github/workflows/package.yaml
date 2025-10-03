@@ -3,6 +3,8 @@ name: Build & Package
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 jobs:
@@ -27,8 +29,15 @@ jobs:
       - name: Construire le zip minimal
         run: scripts/package.sh "${{ steps.version.outputs.version }}"
 
-      - name: Publier l’artefact
+      - name: Publier l’artefact CI
         uses: actions/upload-artifact@v4
         with:
           name: MediaRetentionGuardian
           path: MediaRetentionGuardian_v${{ steps.version.outputs.version }}.zip
+
+      - name: Publier dans la Release GitHub
+        uses: softprops/action-gh-release@v1
+        with:
+          files: MediaRetentionGuardian_v${{ steps.version.outputs.version }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
