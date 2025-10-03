@@ -1,0 +1,154 @@
+#MediaRetentionConfigPage .mrOverlay {
+    -webkit-align-items: center;
+    align-items: center;
+    bottom: 0;
+    contain: strict;
+    display: none;
+    -webkit-justify-content: center;
+    justify-content: center;
+    left: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+    position: fixed;
+    right: 0;
+    top: 0;
+    z-index: 999999 !important;
+}
+
+#MediaRetentionConfigPage .mrOverlay.is-visible {
+    display: -webkit-flex;
+    display: flex;
+}
+
+.mrDialog {
+    animation: 140ms ease-out 0s 1 normal both running scaleup;
+    display: flex;
+    flex-direction: column;
+    gap: 1em;
+    margin: 1.5em;
+    padding: 1.5em;
+    width: min(95vw, 42em);
+    max-width: 100%;
+    max-height: min(95vh, 60em);
+    border-radius: var(--largeRadius) !important;
+    border: var(--defaultBorder);
+    backdrop-filter: var(--blurDefault);
+    background-color: rgba(30, 40, 54, 1);
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+.mrHeader {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+.mrHeader button {
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 1.25em;
+    cursor: pointer;
+    padding: 0.2em 0.4em;
+}
+
+.mrField {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+    flex-shrink: 0;
+}
+
+.mrList {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 22em;
+    overflow-y: scroll;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 0.5em;
+}
+
+.mrEntry {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 0.6em 0.8em;
+    margin-bottom: 0.45em;
+    background: rgba(255, 255, 255, 0.05);
+    border: 0;
+    border-radius: 4px;
+    color: inherit;
+    cursor: pointer;
+}
+
+.mrEntry:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.mrFooter {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5em;
+    flex-shrink: 0;
+}
+
+.mrTargetList {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+    margin: 1em 0;
+}
+
+.mrTargetEmpty {
+    padding: 0.8em;
+    border-radius: 6px;
+    border: 1px dashed rgba(255, 255, 255, 0.15);
+    opacity: 0.7;
+}
+
+.mrTarget {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1em;
+    padding: 0.75em 1em;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.mrTargetSummary {
+    font-weight: 600;
+    word-break: break-word;
+    line-height: 1.4;
+}
+
+.mrThresholdInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2em;
+    font-size: 0.95em;
+    opacity: 0.85;
+}
+
+.mrTargetActions {
+    display: flex;
+    gap: 0.4em;
+}
+
+.mrTargetsActions {
+    margin-bottom: 1.2em;
+}
+
+.mrError {
+    color: #e74c3c;
+    min-height: 1em;
+}
+.sectionTitle {
+    margin-top: 20px;
+}

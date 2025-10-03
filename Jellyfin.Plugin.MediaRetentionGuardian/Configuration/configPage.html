@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <title>Media Retention Guardian</title>
+</head>
+<body>
+    <div id="MediaRetentionConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+        <div id="DirectoryPickerOverlay" class="mrOverlay" aria-hidden="true">
+            <div class="mrDialog">
+                <div class="mrHeader">
+                    <button type="button" data-role="mr-back">←</button>
+                    <span data-role="mr-title">Sélectionner un chemin</span>
+                </div>
+                <div class="mrField">
+                    <label for="DirectoryPickerPath">Dossier</label>
+                    <input id="DirectoryPickerPath" type="text" is="emby-input" data-role="mr-path-display" readonly />
+                </div>
+                <div class="mrField">
+                    <label for="DirectoryPickerDays">Durée de conservation (jours)</label>
+                    <input id="DirectoryPickerDays" type="number" min="1" value="30" is="emby-input" data-role="mr-days" />
+                </div>
+                <div class="mrField" data-role="mr-threshold-group">
+                    <label for="DirectoryPickerThreshold">Seuil d'espace libre (%)</label>
+                    <input id="DirectoryPickerThreshold" type="number" min="1" max="100" is="emby-input" data-role="mr-threshold" placeholder="Ex. 15" />
+                    <div class="fieldDescription">La purge s'exécute lorsque l'espace libre est inférieur ou égal à ce pourcentage.</div>
+                </div>
+                <div class="mrField" data-role="mr-threshold-info">
+                    <div class="mrThresholdInfo">
+                        <span data-role="mr-free-space">Espace libre : n/d</span>
+                        <span data-role="mr-threshold-preview">Seuil : n/d</span>
+                    </div>
+                </div>
+                <div class="mrError" data-role="mr-error"></div>
+                <div class="mrList" data-role="mr-list"></div>
+                <div class="mrFooter">
+                    <button type="button" class="emby-button button-submit" data-role="mr-cancel">Annuler</button>
+                    <button type="button" class="emby-button button-submit raised" data-role="mr-select">OK</button>
+                </div>
+            </div>
+        </div>
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="MediaRetentionConfigForm">
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableRetention" type="checkbox" is="emby-checkbox" />
+                            <span>Activer l'automatisation de suppression</span>
+                        </label>
+                        <div class="fieldDescription">En activant cette option, les fichiers dépassant la durée définie seront supprimés automatiquement.</div>
+                    </div>
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableDiskThreshold" type="checkbox" is="emby-checkbox" />
+                            <span>Conditionner la purge à l'espace disque restant</span>
+                        </label>
+                        <div class="fieldDescription">Si activé, chaque dossier peut définir un pourcentage d'espace libre maximum. La purge ne s'exécutera que si l'espace restant est inférieur ou égal à ce seuil.</div>
+                    </div>
+                    <div class="sectionTitle">Dossiers surveillés</div>
+                    <div id="RetentionTargetsHelp" class="fieldDescription">Ajoutez un dossier, définissez la durée de conservation et supprimez des entrées au besoin.</div>
+                    <div id="RetentionTargetsList" class="mrTargetList" aria-live="polite"></div>
+                    <div class="mrTargetsActions">
+                        <button type="button" id="AddRetentionTarget" class="emby-button raised ">
+                            <span>+ Ajouter un dossier</span>
+                        </button>
+                    </div>
+                    <div>
+                        <button type="submit" class="emby-button raised button-submit block" id="SaveRetentionConfig">
+                            <span>Enregistrer</span>
+                        </button>
+                    </div>
+                </form>
+                <div class="sectionTitle">Dernière exécution</div>
+                <div id="LastRunSummary" class="fieldDescription">Aucune exécution enregistrée.</div>
+            </div>
+        </div>
+        <script type="text/javascript">
+            (function () {
+                const pluginId = '5c5422c9-396b-4dec-87fa-a8a20f65c549';
+                const logPrefix = '[MediaRetentionGuardian]';
+                const styleLinkId = 'MediaRetentionGuardianConfigCssLink';
+                const defaultRetentionDays = 30;
+                const rootSystemEntries = new Set([
+                    'bin',
+                    'boot',
+                    'dev',
+                    'etc',
+                    'lib',
+                    'lib64',
+                    'proc',
+                    'run',
+                    'sbin',
+                    'sys',
+                    'tmp',
+                    'var',
+                    'srv',
+                    'opt',
+                    'lost+found',
+                    'cache',
+                    'root',
+                    'usr'
+                ]);
+                const thresholdMin = 1;
+                const thresholdMax = 100;
+                let retentionTargets = [];
+                let useDiskThreshold = false;
+                let activePicker = null;
+                let driveInfoRequestId = 0;
+                let lastDriveInfo = null;
+                const pickerElements = (function () {
+                    const overlay = document.querySelector('#DirectoryPickerOverlay');
+                    if (!overlay) {
+                        return {};
+                    }
+
+                    return {
+                        overlay,
+                        pathDisplay: overlay.querySelector('[data-role="mr-path-display"]'),
+                        daysInput: overlay.querySelector('[data-role="mr-days"]'),
+                        thresholdGroup: overlay.querySelector('[data-role="mr-threshold-group"]'),
+                        thresholdInput: overlay.querySelector('[data-role="mr-threshold"]'),
+                        thresholdInfo: overlay.querySelector('[data-role="mr-threshold-info"]'),
+                        freeSpaceLabel: overlay.querySelector('[data-role="mr-free-space"]'),
+                        thresholdPreview: overlay.querySelector('[data-role="mr-threshold-preview"]'),
+                        errorBox: overlay.querySelector('[data-role="mr-error"]'),
+                        list: overlay.querySelector('[data-role="mr-list"]'),
+                        backButton: overlay.querySelector('[data-role="mr-back"]'),
+                        cancelButton: overlay.querySelector('[data-role="mr-cancel"]'),
+                        selectButton: overlay.querySelector('[data-role="mr-select"]')
+                    };
+                }());
+                updateThresholdVisibility();
+
+                const targetsListElement = document.querySelector('#RetentionTargetsList');
+                const targetsHelp = document.querySelector('#RetentionTargetsHelp');
+                const diskThresholdToggle = document.querySelector('#EnableDiskThreshold');
+
+                function log() {
+                    // eslint-disable-next-line no-console
+                    console.info.apply(console, [logPrefix].concat(Array.from(arguments)));
+                }
+
+                function warn() {
+                    // eslint-disable-next-line no-console
+                    console.warn.apply(console, [logPrefix].concat(Array.from(arguments)));
+                }
+
+                function error() {
+                    // eslint-disable-next-line no-console
+                    console.error.apply(console, [logPrefix].concat(Array.from(arguments)));
+                }
+
+                function expectApi() {
+                    if (!window.ApiClient) {
+                        error('ApiClient indisponible');
+                        if (window.Dashboard) {
+                            window.Dashboard.alert({ message: "ApiClient indisponible. Rechargez la page." });
+                        }
+                        return null;
+                    }
+
+                    return window.ApiClient;
+                }
+
+                function ensureStylesheet() {
+                    if (!window.Dashboard) {
+                        return;
+                    }
+
+                    if (document.getElementById(styleLinkId)) {
+                        return;
+                    }
+
+                    const link = document.createElement('link');
+                    link.id = styleLinkId;
+                    link.rel = 'stylesheet';
+                    link.href = window.Dashboard.getPluginUrl('MediaRetentionGuardianConfigCss');
+                    document.head.appendChild(link);
+                }
+
+                function sanitizeDays(value) {
+                    const parsed = parseInt(value, 10);
+                    if (Number.isNaN(parsed) || parsed < 1) {
+                        return 1;
+                    }
+
+                    return parsed;
+                }
+
+                function sanitizeThreshold(value) {
+                    if (value === undefined || value === null || value === '') {
+                        return null;
+                    }
+
+                    const parsed = typeof value === 'number' ? value : parseInt(String(value), 10);
+                    if (Number.isNaN(parsed) || !Number.isFinite(parsed)) {
+                        return null;
+                    }
+
+                    if (parsed < thresholdMin) {
+                        return thresholdMin;
+                    }
+
+                    if (parsed > thresholdMax) {
+                        return thresholdMax;
+                    }
+
+                    return parsed;
+                }
+
+                function sanitizeOriginalLog(value) {
+                    if (!value) {
+                        return '';
+                    }
+
+                    const cleaned = value
+                        .split(/<br\s*\/?>|\n/i)
+                        .map(part => part.trim())
+                        .filter(part => part.length && !part.toLowerCase().includes('day/month/year') && !part.toLowerCase().includes('hours:minutes'));
+
+                    return cleaned.join('<br>');
+                }
+
+                function formatLastRun(timestamp) {
+                    if (!timestamp || typeof timestamp !== 'string') {
+                        return 'N/A';
+                    }
+
+                    const trimmed = timestamp.trim();
+                    const placeholder = trimmed.toLowerCase();
+                    if (placeholder.includes('day/month/year')) {
+                        return 'N/A';
+                    }
+
+                    const parsed = new Date(trimmed);
+                    if (Number.isNaN(parsed.valueOf())) {
+                        return trimmed || 'N/A';
+                    }
+
+                    const day = String(parsed.getDate()).padStart(2, '0');
+                    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+                    const year = parsed.getFullYear();
+                    const hours = String(parsed.getHours()).padStart(2, '0');
+                    const minutes = String(parsed.getMinutes()).padStart(2, '0');
+                    return `${day}/${month}/${year} - ${hours}:${minutes}`;
+                }
+
+                function formatBytes(bytes) {
+                    if (!Number.isFinite(bytes) || bytes < 0) {
+                        return 'n/d';
+                    }
+
+                    const units = ['o', 'Ko', 'Mo', 'Go', 'To', 'Po'];
+                    let value = bytes;
+                    let unitIndex = 0;
+                    while (value >= 1024 && unitIndex < units.length - 1) {
+                        value /= 1024;
+                        unitIndex += 1;
+                    }
+
+                    const decimals = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+                    const formatted = value.toFixed(decimals);
+                    return formatted + ' ' + units[unitIndex];
+                }
+
+                function updateThresholdPreview() {
+                    const preview = pickerElements.thresholdPreview;
+                    const thresholdInput = pickerElements.thresholdInput;
+                    if (!preview) {
+                        return;
+                    }
+
+                    if (!useDiskThreshold) {
+                        preview.textContent = 'Seuil : n/d';
+                        return;
+                    }
+
+                    const sanitized = sanitizeThreshold(thresholdInput ? thresholdInput.value : null);
+                    if (sanitized == null) {
+                        preview.textContent = 'Seuil : à paramétrer';
+                        return;
+                    }
+
+                    let text = 'Seuil : ' + sanitized + '% (déclenche ≤ ' + sanitized + '% libres)';
+                    if (lastDriveInfo && Number.isFinite(lastDriveInfo.totalBytes) && lastDriveInfo.totalBytes > 0) {
+                        const thresholdBytes = lastDriveInfo.totalBytes * (sanitized / 100);
+                        text += ' ≈ ' + formatBytes(thresholdBytes) + ' libres';
+                    }
+                    preview.textContent = text;
+                }
+
+                function setFreeSpaceInfo(info) {
+                    const label = pickerElements.freeSpaceLabel;
+                    if (!label) {
+                        return;
+                    }
+
+                    if (!info) {
+                        label.textContent = 'Espace libre : n/d';
+                        return;
+                    }
+
+                    const available = info.availableBytes;
+                    const total = info.totalBytes;
+                    if (!Number.isFinite(available) || !Number.isFinite(total) || total <= 0) {
+                        label.textContent = 'Espace libre : n/d';
+                        return;
+                    }
+
+                    const percent = (available / total) * 100;
+
+                    label.textContent = 'Espace libre : ' + formatBytes(available) + ' / ' + formatBytes(total) + ' (' + percent.toFixed(1) + '%)';
+                }
+
+                function refreshDriveInfo(path) {
+                    const label = pickerElements.freeSpaceLabel;
+                    if (!label) {
+                        return;
+                    }
+
+                    const api = expectApi();
+                    if (!api) {
+                        setFreeSpaceInfo(null);
+                        return;
+                    }
+
+                    if (!path || path === '/') {
+                        driveInfoRequestId += 1;
+                        lastDriveInfo = null;
+                        setFreeSpaceInfo(null);
+                        updateThresholdPreview();
+                        return;
+                    }
+
+                    const requestId = ++driveInfoRequestId;
+                    label.textContent = 'Espace libre : ...';
+                    lastDriveInfo = null;
+                    updateThresholdPreview();
+
+                    api.getJSON(api.getUrl('MediaRetentionGuardian/DriveInfo', { path })).then(data => {
+                        if (requestId !== driveInfoRequestId) {
+                            return;
+                        }
+
+                        const available = data?.AvailableFreeSpace ?? data?.availableFreeSpace ?? data?.AvailableBytes ?? data?.availableBytes ?? null;
+                        const total = data?.TotalSize ?? data?.totalSize ?? data?.TotalBytes ?? data?.totalBytes ?? null;
+                        if (available == null || total == null) {
+                            lastDriveInfo = null;
+                            setFreeSpaceInfo(null);
+                            return;
+                        }
+
+                        lastDriveInfo = {
+                            availableBytes: Number(available),
+                            totalBytes: Number(total)
+                        };
+                        setFreeSpaceInfo(lastDriveInfo);
+                        updateThresholdPreview();
+                    }).catch(() => {
+                        if (requestId !== driveInfoRequestId) {
+                            return;
+                        }
+
+                        lastDriveInfo = null;
+                        setFreeSpaceInfo(null);
+                        updateThresholdPreview();
+                    });
+                }
+
+                function parentPath(path) {
+                    if (!path || path === '/' || /^[A-Za-z]:\\?$/.test(path)) {
+                        return '/';
+                    }
+
+                    let normalized = path.replace(/\\/g, '/');
+                    while (normalized.length > 1 && normalized.endsWith('/')) {
+                        normalized = normalized.slice(0, -1);
+                    }
+
+                    const lastSlash = normalized.lastIndexOf('/');
+                    return lastSlash <= 0 ? '/' : normalized.substring(0, lastSlash);
+                }
+
+                function normalizeTargets(config) {
+                    const rawTargets = Array.isArray(config.RetentionTargets) ? config.RetentionTargets : [];
+                    const mapped = rawTargets
+                        .map(item => ({
+                            path: (item?.Path ?? item?.path ?? '').trim(),
+                            days: sanitizeDays(item?.Days ?? item?.days ?? defaultRetentionDays),
+                            threshold: sanitizeThreshold(item?.TriggerFreeSpacePercent ?? item?.triggerFreeSpacePercent ?? null)
+                        }))
+                        .filter(item => item.path.length);
+
+                    const legacyPath = (config.RetentionPath || '').trim();
+                    if (!mapped.length && legacyPath.length) {
+                        mapped.push({
+                            path: legacyPath,
+                            days: sanitizeDays(config.RetentionDays ?? defaultRetentionDays),
+                            threshold: null
+                        });
+                    }
+
+                    return mapped;
+                }
+
+                function updateTargetsHelpVisibility() {
+                    if (!targetsHelp) {
+                        return;
+                    }
+
+                    targetsHelp.style.display = retentionTargets.length ? 'none' : '';
+                }
+
+                function updateThresholdVisibility() {
+                    const thresholdGroup = pickerElements.thresholdGroup;
+                    const thresholdInput = pickerElements.thresholdInput;
+                    const thresholdInfo = pickerElements.thresholdInfo;
+
+                    if (thresholdGroup) {
+                        thresholdGroup.style.display = useDiskThreshold ? '' : 'none';
+                    }
+
+                    if (thresholdInput) {
+                        thresholdInput.disabled = !useDiskThreshold;
+                    }
+
+                    if (thresholdInfo) {
+                        thresholdInfo.style.display = useDiskThreshold ? '' : 'none';
+                    }
+
+                    updateThresholdPreview();
+
+                    if (useDiskThreshold && activePicker && activePicker.currentPath) {
+                        refreshDriveInfo(activePicker.currentPath);
+                    } else if (!useDiskThreshold) {
+                        driveInfoRequestId += 1;
+                        lastDriveInfo = null;
+                        setFreeSpaceInfo(null);
+                    }
+                }
+
+                function renderRetentionTargets() {
+                    if (!targetsListElement) {
+                        return;
+                    }
+
+                    targetsListElement.innerHTML = '';
+
+                    if (!retentionTargets.length) {
+                        const empty = document.createElement('div');
+                        empty.className = 'mrTargetEmpty';
+                        empty.textContent = 'Aucun dossier configuré.';
+                        targetsListElement.appendChild(empty);
+                        updateTargetsHelpVisibility();
+                        return;
+                    }
+
+                    retentionTargets.forEach((target, index) => {
+                        const item = document.createElement('div');
+                        item.className = 'mrTarget';
+                        item.dataset.index = String(index);
+
+                        const info = document.createElement('div');
+                        info.className = 'mrTargetInfo';
+
+                        const summary = document.createElement('span');
+                        summary.className = 'mrTargetSummary';
+                        let summaryText = String(target.path) + ' - ' + target.days + ' jour(s)';
+                        if (useDiskThreshold) {
+                            const normalizedThreshold = sanitizeThreshold(target.threshold);
+                            const thresholdText = normalizedThreshold != null ? normalizedThreshold + '%' : 'à paramétrer';
+                            summaryText += ' - Seuil disque ' + thresholdText;
+                        }
+                        summary.textContent = summaryText;
+                        summary.title = summaryText;
+
+                        info.appendChild(summary);
+
+                        const actions = document.createElement('div');
+                        actions.className = 'mrTargetActions';
+
+                        const editButton = document.createElement('button');
+                        editButton.type = 'button';
+                        editButton.className = 'emby-button button-submit';
+                        editButton.setAttribute('data-action', 'edit');
+                        editButton.textContent = 'Modifier';
+
+                        const removeButton = document.createElement('button');
+                        removeButton.type = 'button';
+                        removeButton.className = 'emby-button button-submit';
+                        removeButton.setAttribute('data-action', 'remove');
+                        removeButton.setAttribute('aria-label', `Supprimer ${target.path}`);
+                        removeButton.innerHTML = '&times;';
+
+                        actions.appendChild(editButton);
+                        actions.appendChild(removeButton);
+
+                        item.appendChild(info);
+                        item.appendChild(actions);
+
+                        targetsListElement.appendChild(item);
+                    });
+
+                    updateTargetsHelpVisibility();
+                }
+
+                function normalizeEntries(result) {
+                    if (!result) {
+                        return [];
+                    }
+
+                    if (Array.isArray(result.Directories)) {
+                        return result.Directories;
+                    }
+
+                    if (Array.isArray(result.Items)) {
+                        return result.Items;
+                    }
+
+                    return Array.isArray(result) ? result : [];
+                }
+
+                function openTargetDialog(options) {
+                    const api = expectApi();
+                    if (!api) {
+                        return;
+                    }
+
+                    const elements = pickerElements;
+                    if (!elements.overlay || !elements.pathDisplay || !elements.errorBox || !elements.list || !elements.backButton || !elements.cancelButton || !elements.selectButton || !elements.daysInput) {
+                        warn('La fenêtre de sélection est incomplète.');
+                        return;
+                    }
+
+                    const startPath = (options.initialPath || '').trim() || '/';
+                    const startDays = sanitizeDays(options.initialDays ?? defaultRetentionDays);
+                    const startThreshold = sanitizeThreshold(options.initialThreshold ?? null);
+                    const onConfirm = typeof options.onConfirm === 'function' ? options.onConfirm : null;
+
+                    if (elements.daysInput) {
+                        elements.daysInput.value = String(startDays);
+                    }
+
+                    if (elements.thresholdInput) {
+                        elements.thresholdInput.value = startThreshold != null ? String(startThreshold) : '';
+                        elements.thresholdInput.disabled = !useDiskThreshold;
+                    }
+
+                    if (elements.thresholdGroup) {
+                        elements.thresholdGroup.style.display = useDiskThreshold ? '' : 'none';
+                    }
+
+                    updateThresholdPreview();
+
+                    function cleanup() {
+                        elements.overlay.classList.remove('is-visible');
+                        elements.overlay.setAttribute('aria-hidden', 'true');
+                        document.removeEventListener('keydown', keyHandler);
+                        activePicker = null;
+                        driveInfoRequestId += 1;
+                        lastDriveInfo = null;
+                        setFreeSpaceInfo(null);
+                    }
+
+                    function keyHandler(evt) {
+                        if (evt.key === 'Escape' && activePicker) {
+                            activePicker.cleanup();
+                        }
+                    }
+
+                    function setCurrentPath(path) {
+                        if (!activePicker) {
+                            return;
+                        }
+
+                        activePicker.currentPath = path;
+                        elements.pathDisplay.value = path;
+                        if (useDiskThreshold) {
+                            refreshDriveInfo(path);
+                        } else {
+                            driveInfoRequestId += 1;
+                            lastDriveInfo = null;
+                            setFreeSpaceInfo(null);
+                            updateThresholdPreview();
+                        }
+                    }
+
+                    function entryLabel(path) {
+                        const normalized = path.replace(/\\/g, '/');
+                        if (!normalized || normalized === '/') {
+                            return '/';
+                        }
+
+                        const parts = normalized.split('/').filter(Boolean);
+                        return '/' + parts[parts.length - 1];
+                    }
+
+                    function renderEntries(entries) {
+                        elements.list.innerHTML = '';
+                        if (!entries.length) {
+                            const empty = document.createElement('div');
+                            empty.className = 'mrEntry';
+                            empty.style.opacity = '0.7';
+                            empty.textContent = 'Aucun sous-dossier.';
+                            elements.list.appendChild(empty);
+                            return;
+                        }
+
+                        const isRootListing = activePicker && (activePicker.currentPath === '/' || activePicker.currentPath === '');
+
+                        entries.forEach(entry => {
+                            const entryPath = entry.Path || entry.FullName || entry.VirtualPath || entry;
+                            if (!entryPath) {
+                                return;
+                            }
+
+                            const attributes = entry.Attributes;
+                            if (entry.IsHidden === true) {
+                                return;
+                            }
+
+                            if (Array.isArray(attributes)) {
+                                const loweredAttributes = attributes.map(attr => (typeof attr === 'string' ? attr.toLowerCase() : ''));
+                                if (loweredAttributes.includes('system') || loweredAttributes.includes('hidden')) {
+                                    return;
+                                }
+                            } else if (typeof attributes === 'string') {
+                                const lowered = attributes.toLowerCase();
+                                if (lowered.includes('system') || lowered.includes('hidden')) {
+                                    return;
+                                }
+                            }
+
+                            const entryName = (entry.Name || entryLabel(entryPath) || '').trim();
+                            if (entryName.startsWith('.')) {
+                                return;
+                            }
+
+                            const lowerName = entryName.toLowerCase();
+                            if (isRootListing && rootSystemEntries.has(lowerName)) {
+                                return;
+                            }
+
+                            const button = document.createElement('button');
+                            button.type = 'button';
+                            button.className = 'mrEntry';
+
+                            const label = document.createElement('span');
+                            label.textContent = entryName.length ? entryName : entryLabel(entryPath);
+
+                            const arrow = document.createElement('span');
+                            arrow.textContent = '→';
+
+                            button.appendChild(label);
+                            button.appendChild(arrow);
+                            button.addEventListener('click', () => {
+                                if (activePicker) {
+                                    activePicker.loadDirectory(entryPath);
+                                }
+                            });
+                            elements.list.appendChild(button);
+                        });
+                    }
+
+                    function loadDirectory(path) {
+                        const effectivePath = path && path.length ? path : '/';
+                        setCurrentPath(effectivePath);
+                        elements.errorBox.textContent = '';
+
+                        return api.getJSON(api.getUrl('Environment/DirectoryContents', {
+                            path: effectivePath,
+                            includeDirectories: true,
+                            includeFiles: false
+                        })).then(result => {
+                            if (!activePicker) {
+                                return;
+                            }
+
+                            renderEntries(normalizeEntries(result));
+                        }).catch(err => {
+                            if (!activePicker) {
+                                return;
+                            }
+
+                            warn('DirectoryContents failed', err);
+                            if (effectivePath !== '/') {
+                                loadDirectory('/');
+                            } else {
+                                elements.errorBox.textContent = "Impossible de charger ce dossier.";
+                                elements.list.innerHTML = '';
+                            }
+                        });
+                    }
+
+                    activePicker = {
+                        currentPath: startPath,
+                        initialThreshold: startThreshold,
+                        cleanup,
+                        loadDirectory,
+                        resolve: params => {
+                            if (onConfirm) {
+                                onConfirm(params);
+                            }
+                        }
+                    };
+
+                    updateThresholdVisibility();
+
+                    if (!elements.overlay.dataset.initialized) {
+                        elements.overlay.dataset.initialized = 'true';
+                        elements.overlay.addEventListener('click', evt => {
+                            if (evt.target === elements.overlay && activePicker) {
+                                activePicker.cleanup();
+                            }
+                        });
+                        elements.cancelButton.addEventListener('click', () => {
+                            if (activePicker) {
+                                activePicker.cleanup();
+                            }
+                        });
+                        elements.backButton.addEventListener('click', () => {
+                            if (activePicker) {
+                                activePicker.loadDirectory(parentPath(activePicker.currentPath));
+                            }
+                        });
+                        elements.selectButton.addEventListener('click', () => {
+                            if (!activePicker) {
+                                return;
+                            }
+
+                            const daysValue = sanitizeDays(elements.daysInput.value);
+                            if (!activePicker.currentPath || !activePicker.currentPath.length) {
+                                elements.errorBox.textContent = 'Sélectionnez un dossier valide.';
+                                return;
+                            }
+
+                            const thresholdInputValue = elements.thresholdInput ? elements.thresholdInput.value : null;
+                            const thresholdValue = useDiskThreshold
+                                ? sanitizeThreshold(thresholdInputValue)
+                                : activePicker.initialThreshold;
+
+                            const payload = { path: activePicker.currentPath, days: daysValue, threshold: thresholdValue };
+                            const resolver = activePicker.resolve;
+                            activePicker.cleanup();
+                            if (resolver) {
+                                resolver(payload);
+                            }
+                        });
+
+                        if (elements.thresholdInput) {
+                            elements.thresholdInput.addEventListener('input', () => {
+                                const sanitizedValue = sanitizeThreshold(elements.thresholdInput.value);
+                                if (sanitizedValue != null) {
+                                    elements.thresholdInput.value = String(sanitizedValue);
+                                }
+                                updateThresholdPreview();
+                            });
+                            elements.thresholdInput.addEventListener('blur', () => {
+                                const sanitizedValue = sanitizeThreshold(elements.thresholdInput.value);
+                                elements.thresholdInput.value = sanitizedValue != null ? String(sanitizedValue) : '';
+                                updateThresholdPreview();
+                            });
+                        }
+                    }
+
+                    elements.pathDisplay.value = startPath;
+                    elements.errorBox.textContent = '';
+                    elements.list.innerHTML = '';
+
+                    elements.overlay.classList.add('is-visible');
+                    elements.overlay.setAttribute('aria-hidden', 'false');
+                    document.addEventListener('keydown', keyHandler);
+
+                    if (useDiskThreshold) {
+                        refreshDriveInfo(startPath);
+                    } else {
+                        driveInfoRequestId += 1;
+                        lastDriveInfo = null;
+                        setFreeSpaceInfo(null);
+                        updateThresholdPreview();
+                    }
+
+                    const shouldUseDefault = !startPath || startPath === '/';
+                    if (shouldUseDefault) {
+                        api.getJSON(api.getUrl('Environment/DefaultDirectoryBrowser')).then(result => {
+                            const defaultPath = result?.Path || result || startPath || '/';
+                            loadDirectory(defaultPath);
+                        }).catch(() => {
+                            loadDirectory(startPath || '/');
+                        });
+                    } else {
+                        loadDirectory(startPath).catch(() => {
+                            /* ignore errors handled upstream */
+                        });
+                    }
+                }
+
+                function validateTargets(api, targets) {
+                    const pathsToValidate = targets.filter(target => target.path && target.path.length);
+                    if (!pathsToValidate.length) {
+                        return Promise.resolve();
+                    }
+
+                    const validateUrl = api.getUrl('Environment/ValidatePath');
+
+                    function next(index) {
+                        if (index >= pathsToValidate.length) {
+                            return Promise.resolve();
+                        }
+
+                        const target = pathsToValidate[index];
+                        return api.ajax({
+                            type: 'POST',
+                            url: validateUrl,
+                            contentType: 'application/json',
+                            data: JSON.stringify({
+                                Path: target.path,
+                                ValidateWriteable: false
+                            })
+                        }).then(() => next(index + 1)).catch(err => {
+                            warn('ValidatePath failed', err);
+                            throw { error: err, path: target.path };
+                        });
+                    }
+
+                    return next(0);
+                }
+
+                function saveConfiguration(api, enable, targets) {
+                    return api.getPluginConfiguration(pluginId).then(config => {
+                        config.EnableRetention = enable;
+                        config.EnableDiskThreshold = useDiskThreshold;
+                        config.RetentionTargets = targets.map(target => ({
+                            Path: target.path,
+                            Days: target.days,
+                            TriggerFreeSpacePercent: target.threshold
+                        }));
+                        config.RetentionPath = '';
+                        config.RetentionDays = defaultRetentionDays;
+                        return api.updatePluginConfiguration(pluginId, config).then(result => {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    }).catch(err => {
+                        error('Échec de la mise à jour de la configuration', err);
+                        throw err;
+                    });
+                }
+
+document.querySelector('#MediaRetentionConfigPage').addEventListener('pageshow', function () {
+                    ensureStylesheet();
+                    const api = expectApi();
+                    if (!api) {
+                        return;
+                    }
+
+                    Dashboard.showLoadingMsg();
+                    api.getPluginConfiguration(pluginId).then(config => {
+                        log('Configuration chargée', config);
+                        retentionTargets = normalizeTargets(config);
+                        document.querySelector('#EnableRetention').checked = config.EnableRetention || false;
+                        useDiskThreshold = Boolean(config.EnableDiskThreshold);
+                        if (diskThresholdToggle) {
+                            diskThresholdToggle.checked = useDiskThreshold;
+                        }
+                        updateThresholdVisibility();
+                        renderRetentionTargets();
+
+                        const summary = document.querySelector('#LastRunSummary');
+                        if (summary) {
+                            const deletedRaw = config.LastRunDeletedCount;
+                            const parsedDeleted = Number(deletedRaw);
+                            const hasDeleted = !Number.isNaN(parsedDeleted) && Number.isFinite(parsedDeleted);
+                            const lastRunRaw = typeof config.LastRunUtc === 'string' ? config.LastRunUtc : null;
+
+                            if (summary.dataset.originalContent === undefined) {
+                                const initial = sanitizeOriginalLog(summary.innerHTML.trim());
+                                summary.dataset.originalContent = initial && initial !== 'Aucune exécution enregistrée.' ? initial : '';
+                            }
+
+                            if (hasDeleted && parsedDeleted >= 0) {
+                                const lastRunDisplay = lastRunRaw && lastRunRaw.length ? formatLastRun(lastRunRaw) : 'N/A';
+                                const thresholdNote = config.LastRunTriggeredByDiskThreshold ? ' (déclenché par le seuil disque)' : '';
+                                const message = 'Dernière tâche : ' + parsedDeleted + ' fichier(s) supprimé(s) le ' + lastRunDisplay + thresholdNote;
+                                const original = sanitizeOriginalLog(summary.dataset.originalContent || '');
+                                summary.dataset.originalContent = original;
+                                summary.innerHTML = original ? `${message}<br>${original}` : message;
+                            } else {
+                                summary.textContent = 'Aucune exécution enregistrée.';
+                            }
+                        }
+
+                        Dashboard.hideLoadingMsg();
+                    }).catch(err => {
+                        warn('Échec du chargement de la configuration', err);
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+                if (diskThresholdToggle) {
+                    diskThresholdToggle.addEventListener('change', () => {
+                        useDiskThreshold = diskThresholdToggle.checked;
+                        updateThresholdVisibility();
+                        renderRetentionTargets();
+                    });
+                }
+
+                const addButton = document.querySelector('#AddRetentionTarget');
+                if (addButton) {
+                    addButton.addEventListener('click', evt => {
+                        evt.preventDefault();
+                        openTargetDialog({
+                            initialPath: '/',
+                            initialDays: defaultRetentionDays,
+                            initialThreshold: null,
+                            onConfirm: payload => {
+                                retentionTargets.push({
+                                    path: payload.path,
+                                    days: sanitizeDays(payload.days),
+                                    threshold: sanitizeThreshold(payload.threshold)
+                                });
+                                renderRetentionTargets();
+                            }
+                        });
+                    });
+                }
+
+                if (targetsListElement) {
+                    targetsListElement.addEventListener('click', evt => {
+                        const targetEl = evt.target;
+                        if (!targetEl || typeof targetEl.getAttribute !== 'function') {
+                            return;
+                        }
+
+                        const action = targetEl.getAttribute('data-action');
+                        if (!action) {
+                            return;
+                        }
+
+                        const item = targetEl.closest('.mrTarget');
+                        if (!item || !item.dataset.index) {
+                            return;
+                        }
+
+                        const index = parseInt(item.dataset.index, 10);
+                        if (Number.isNaN(index) || index < 0 || index >= retentionTargets.length) {
+                            return;
+                        }
+
+                        if (action === 'remove') {
+                            retentionTargets.splice(index, 1);
+                            renderRetentionTargets();
+                            return;
+                        }
+
+                        if (action === 'edit') {
+                            const target = retentionTargets[index];
+                            openTargetDialog({
+                                initialPath: target.path,
+                                initialDays: target.days,
+                                initialThreshold: target.threshold,
+                                onConfirm: payload => {
+                                    retentionTargets[index] = {
+                                        path: payload.path,
+                                        days: sanitizeDays(payload.days),
+                                        threshold: sanitizeThreshold(payload.threshold)
+                                    };
+                                    renderRetentionTargets();
+                                }
+                            });
+                        }
+                    });
+                }
+
+                document.querySelector('#MediaRetentionConfigForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+
+                    const api = expectApi();
+                    if (!api) {
+                        return false;
+                    }
+
+                    const enable = document.querySelector('#EnableRetention').checked;
+                    const targetsToSave = retentionTargets
+                        .map(target => ({
+                            path: (target.path || '').trim(),
+                            days: sanitizeDays(target.days),
+                            threshold: sanitizeThreshold(target.threshold)
+                        }))
+                        .filter(target => target.path.length);
+
+                    if (enable && !targetsToSave.length) {
+                        Dashboard.alert({ message: "Ajoutez au moins un dossier avant d'activer l'automatisation." });
+                        return false;
+                    }
+
+                    if (useDiskThreshold) {
+                        const missingThreshold = targetsToSave.some(target => target.threshold == null);
+                        if (missingThreshold) {
+                            Dashboard.alert({ message: "Définissez un seuil d'espace libre pour chaque dossier avant d'enregistrer." });
+                            return false;
+                        }
+                    }
+
+                    Dashboard.showLoadingMsg();
+                    validateTargets(api, targetsToSave)
+                        .then(() => saveConfiguration(api, enable, targetsToSave))
+                        .catch(info => {
+                            if (info && info.path) {
+                                Dashboard.alert({ message: `Le chemin ${info.path} n'est pas accessible par Jellyfin.` });
+                            } else if (info) {
+                                warn('Sauvegarde de la configuration échouée', info);
+                                Dashboard.alert({ message: "Échec de la sauvegarde de la configuration." });
+                            }
+                        })
+                        .finally(() => {
+                            Dashboard.hideLoadingMsg();
+                        });
+
+                    return false;
+                });
+            }());
+        </script>
+    </div>
+</body>
+</html>
