@@ -3,7 +3,7 @@ name: Build & Release Jellyfin Plugin
 on:
   push:
     tags:
-      - 'v*.*.*'   # Exemple: v0.1.0, v0.2.0
+      - 'v*.*.*'   # Exemple: v1.0.0, v1.0.1
   workflow_dispatch:
 
 permissions:
@@ -26,7 +26,7 @@ jobs:
       - name: Installer jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      # 4. Extraire la version depuis le tag (ex: v0.2.0)
+      # 4. Extraire la version depuis le tag (ex: v1.0.0)
       - name: Extraire la version depuis le tag
         id: version
         run: |
@@ -52,12 +52,12 @@ jobs:
           CHECKSUM=$(md5sum MediaRetentionGuardian_v${{ steps.version.outputs.version }}.zip | awk '{print $1}')
           echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
 
-      # 9. Mettre à jour le manifest.json (ajout de version dans l'objet plugin)
+      # 9. Mettre à jour le manifest.json (nouvelle version ajoutée en premier)
       - name: Mettre à jour manifest.json
         run: |
           jq --arg v "${{ steps.version.outputs.version }}" \
              --arg c "${{ steps.checksum.outputs.checksum }}" \
-             '.[] |= (.versions += [{
+             '.[] |= (.versions = ([{
                 "version": $v,
                 "targetAbi": "10.10.0.0",
                 "framework": "net8.0",
@@ -65,7 +65,7 @@ jobs:
                 "sourceUrl": "https://github.com/${{ github.repository }}/releases/download/v\($v)/MediaRetentionGuardian_v\($v).zip",
                 "thumb": "https://raw.githubusercontent.com/${{ github.repository }}/main/Jellyfin.Plugin.MediaRetentionGuardian/thumb.png",
                 "checksum": $c
-             }])' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
+             }] + .versions))' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
 
       # 10. Afficher manifest.json (debug)
       - name: Afficher manifest.json
