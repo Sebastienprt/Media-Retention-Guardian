@@ -15,65 +15,84 @@ Media Retention Guardian est un plugin Jellyfin qui automatise la suppression de
 - Accès administrateur au serveur Jellyfin.
 - .NET SDK 8.0 uniquement si vous souhaitez compiler le plugin vous-même.
 
-## Workflow Git pour préparer une version installable via une source Jellyfin
+## Dépôt Git
+Le code source est maintenu dans le dépôt GitHub suivant :
+- https://github.com/Sebastienprt/server-cleaner
+
+## Ajouter la source du plugin dans Jellyfin
+### 1. Préparer les fichiers publiés
+- Générez l'archive à partir du dossier `publish` :
+  ```bash
+  dotnet publish -c Release Jellyfin.Plugin.MediaRetentionGuardian/MediaRetentionGuardian.csproj
+  cd Jellyfin.Plugin.MediaRetentionGuardian/bin/Release/net8.0/publish
+  python3 -m zipfile -c ../../../../MediaRetentionGuardian_v0.1.0.zip ./*
+  ```
+- Calculez la somme : `sha256sum MediaRetentionGuardian_v0.1.0.zip` (exemple : `sha256:854d53e4cb62583147521e6df408d84bd8a19794407d529c11e4c021972be535`).
+- Placez `MediaRetentionGuardian_v0.1.0.zip`, `thumb.png` et `manifest.json` sur un hébergement HTTP/HTTPS. Dans le manifest, adaptez `sourceUrl` et `thumb` vers les URL publiques, par exemple :
+  ```json
+  {
+    "sourceUrl": "https://mon-domaine/plugins/MediaRetentionGuardian_v0.1.0.zip",
+    "thumb": "https://mon-domaine/plugins/thumb.png"
+  }
+  ```
+
+### 2. Déclarer le dépôt dans Jellyfin
+1. Interface administrateur Jellyfin > `Tableau de bord` > `Plugins` > `Dépôts`.
+2. Cliquez sur `Ajouter un dépôt` et indiquez :
+   - **Nom** : `Media Retention Guardian` (ou tout libellé parlant).
+   - **URL** : l'URL directe de votre `manifest.json`, par exemple `https://mon-domaine/plugins/manifest.json`.
+3. Validez puis revenez à l'onglet `Catalogue`.
+4. Rafraîchissez la liste, recherchez **Media Retention Guardian** et lancez l'installation.
+5. Redémarrez Jellyfin si l'interface le demande pour charger le plugin.
+
+### Installation manuelle (alternative)
+1. Téléchargez l'archive `MediaRetentionGuardian_vX.Y.Z.zip` depuis la section "Assets" d'une release GitHub.
+2. Décompressez le contenu dans `plugins/MediaRetentionGuardian` au sein du data directory Jellyfin (ex. `~/.local/share/jellyfin/plugins/MediaRetentionGuardian`).
+3. Redémarrez Jellyfin.
+
+## Configuration du plugin
+1. Tableau de bord Jellyfin > `Plugins` > `Media Retention Guardian` > `Configuration`.
+2. Activez la purge automatique puis ajoutez un ou plusieurs dossiers cibles :
+   - **Chemin** : dossier surveillé.
+   - **Durée de conservation (jours)** : ancienneté maximale des fichiers.
+   - **Seuil d'espace libre (%)** *(facultatif)* : purge déclenchée seulement si l'espace libre est inférieur à ce pourcentage.
+3. Sauvegardez. La tâche planifiée s'exécute chaque nuit à 03h00. Déclenchez-la manuellement via `Tableau de bord` > `Planificateur` > `Media Retention Guardian` si nécessaire.
+
+## Workflow Git pour préparer une nouvelle version
 1. **Cloner et créer une branche de travail**
    ```bash
-   git clone https://github.com/<votre-organisation>/media-retention-guardian.git
-   cd media-retention-guardian
+   git clone https://github.com/Sebastienprt/server-cleaner.git
+   cd server-cleaner
    git checkout -b feature/ma-modif
    ```
 2. **Développer et valider**
    - Implémentez vos changements dans `Jellyfin.Plugin.MediaRetentionGuardian`.
-   - Exécutez `dotnet build Jellyfin.Plugin.MediaRetentionGuardian/MediaRetentionGuardian.csproj` pour valider la compilation.
+   - Exécutez `dotnet build Jellyfin.Plugin.MediaRetentionGuardian/MediaRetentionGuardian.csproj` pour vérifier la compilation.
 3. **Mettre à jour la version**
    - Incrémentez la version dans `build.yaml` (`version:`) et `Directory.Build.props` (`<Version>`, `<AssemblyVersion>`, `<FileVersion>`).
-   - Ajustez le changelog dans `build.yaml` si besoin.
+   - Actualisez le `changelog` de `build.yaml` si nécessaire.
 4. **Commiter et fusionner**
    ```bash
    git commit -am "Prépare la version vX.Y.Z"
    git push origin feature/ma-modif
    ```
    - Ouvrez une Pull Request et validez qu'elle passe les workflows GitHub Actions (`🏗️ Build Plugin`).
-5. **Créer un tag et une release**
-   - Une fois fusionné sur `master`, créez un tag annoté :
+5. **Publier une release**
+   - Une fois la branche fusionnée sur `main`, créez un tag annoté :
      ```bash
-     git checkout master
+     git checkout main
      git pull
      git tag -a vX.Y.Z -m "Media Retention Guardian vX.Y.Z"
      git push origin vX.Y.Z
      ```
-   - Publiez une release GitHub en attachant l'archive générée par le workflow (fichier `MediaRetentionGuardian_vX.Y.Z.zip`).
-6. **Déployer le manifest**
-   - Le workflow `🚀 Publish Plugin` se charge de copier le manifest et les artefacts vers l'hôte défini par vos secrets (`DEPLOY_HOST`).
-   - L'URL finale du manifest prend généralement la forme `https://<votre-hôte>/media-retention-guardian/manifest.json`. Notez-la : elle sera nécessaire pour l'installation côté Jellyfin.
-
-## Installation via une source personnalisée dans Jellyfin
-1. Connectez-vous à l'interface administrateur de Jellyfin.
-2. Ouvrez `Tableau de bord` > `Plugins` > `Dépôts`.
-3. Cliquez sur `Ajouter un dépôt` et renseignez :
-   - **Nom** : `Media Retention Guardian`
-   - **URL** : l'URL du manifest publiée par votre workflow, ex. `https://<votre-hôte>/media-retention-guardian/manifest.json`
-4. Validez, puis allez dans l'onglet `Catalogue` des plugins.
-5. Recherchez "Media Retention Guardian" et installez-le depuis la nouvelle source.
-6. Redémarrez le serveur Jellyfin si l'interface vous le demande.
-
-### Installation manuelle (alternative)
-Si vous ne disposez pas encore d'une source publiée :
-1. Téléchargez l'archive `MediaRetentionGuardian_vX.Y.Z.zip` depuis la section "Assets" d'une release GitHub.
-2. Décompressez le contenu dans le dossier `plugins/MediaRetentionGuardian` de votre data directory Jellyfin (par exemple `~/.local/share/jellyfin/plugins/MediaRetentionGuardian`).
-3. Redémarrez Jellyfin pour que le plugin soit chargé.
-
-## Configuration du plugin
-1. Dans Jellyfin, ouvrez `Tableau de bord` > `Plugins` > `Media Retention Guardian` > `Configuration`.
-2. Activez la purge automatique puis ajoutez un ou plusieurs dossiers cibles :
-   - **Chemin** : dossier surveillé.
-   - **Durée de conservation (jours)** : ancienneté maximale des fichiers.
-   - **Seuil d'espace libre (%)** *(facultatif)* : purge déclenchée seulement si l'espace libre est inférieur à ce pourcentage.
-3. Sauvegardez. La tâche planifiée s'exécute chaque nuit à 03h00. Vous pouvez déclencher une exécution manuelle via `Tableau de bord` > `Planificateur` > `Media Retention Guardian`.
+   - Publiez la release GitHub en y ajoutant l'archive construite (`MediaRetentionGuardian_vX.Y.Z.zip`).
+6. **Mettre à jour la source Jellyfin**
+   - Le workflow `🚀 Publish Plugin` ou votre procédure de déploiement copie le manifest et l'archive vers l'hébergement.
+   - Vérifiez que l'URL du manifest est à jour dans Jellyfin si le nom de fichier change.
 
 ## Dépannage
-- Les logs de la tâche sont disponibles dans `Tableau de bord` > `Planificateur` > `Historique`. Ils détaillent le nombre de fichiers supprimés par cible.
-- En cas d'erreur de permission, vérifiez que l'utilisateur système de Jellyfin possède les droits en lecture/écriture sur les dossiers surveillés.
-- Si le seuil de disque est activé mais jamais déclenché, confirmez que la valeur correspond au pourcentage d'espace libre restants (et non utilisé).
+- Les logs sont accessibles via `Tableau de bord` > `Planificateur` > `Historique`.
+- En cas d'erreur de permission, assurez-vous que l'utilisateur système Jellyfin a les droits en lecture/écriture sur les dossiers ciblés.
+- Si le seuil de disque n'est jamais atteint, vérifiez que la valeur correspond bien au pourcentage d'espace libre (et non utilisé).
 
-Pour toute contribution ou problème, ouvrez une issue ou une Pull Request dans le dépôt Git.
+Contribution et retours bienvenus via issues ou Pull Requests sur le dépôt GitHub.
