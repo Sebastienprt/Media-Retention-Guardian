@@ -14,7 +14,7 @@
         "changelog": "- Initial multi-dossier retention support.",
         "sourceUrl": "https://raw.githubusercontent.com/Sebastienprt/Media-Retention-Guardian/main/MediaRetentionGuardian_v0.1.0.zip",
         "thumb": "https://raw.githubusercontent.com/Sebastienprt/Media-Retention-Guardian/main/Jellyfin.Plugin.MediaRetentionGuardian/thumb.png",
-        "checksum": "md5:8952de3937b819757f7f27dab5777a16"
+        "checksum": "md5:8952DE3937B819757F7F27DAB5777A16"
       }
     ]
   }
