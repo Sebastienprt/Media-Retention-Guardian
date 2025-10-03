@@ -34,14 +34,18 @@ jobs:
       - name: Construire le plugin
         run: scripts/package.sh "${{ steps.version.outputs.version }}"
 
-      # 6. Calculer le checksum
+      # 6. Vérifier que les fichiers existent
+      - name: Vérifier les fichiers générés
+        run: ls -lh .
+
+      # 7. Calculer le checksum
       - name: Calculer le checksum
         id: checksum
         run: |
           CHECKSUM=$(md5sum MediaRetentionGuardian_v${{ steps.version.outputs.version }}.zip | awk '{print $1}')
           echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
 
-      # 7. Mettre à jour le manifest.json
+      # 8. Mettre à jour le manifest.json
       - name: Mettre à jour manifest.json
         run: |
           jq --arg v "${{ steps.version.outputs.version }}" \
@@ -56,12 +60,19 @@ jobs:
                 "checksum": $c
              }]' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
 
-      # 8. Publier les fichiers dans la Release
+      # 9. Publier les fichiers dans la Release
       - name: Publier dans la Release GitHub
         uses: softprops/action-gh-release@v1
         with:
           files: |
             MediaRetentionGuardian_v${{ steps.version.outputs.version }}.zip
             manifest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 10. Vérifier les assets publiés
+      - name: Vérifier les assets de la release
+        run: |
+          gh release view v${{ steps.version.outputs.version }} --json assets --jq '.assets[].name'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
