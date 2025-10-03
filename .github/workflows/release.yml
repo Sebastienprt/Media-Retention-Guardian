@@ -1,1 +1,89 @@
-"changelog": "- Release version " + $v,
+name: Build & Release Jellyfin Plugin
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'   # Exemple: v0.1.0, v0.2.0
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Récupérer le code
+      - uses: actions/checkout@v4
+
+      # 2. Installer .NET
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      # 3. Vérifier que jq est dispo
+      - name: Installer jq (si besoin)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      # 4. Récupérer la version depuis le tag (ex: v0.2.0)
+      - name: Extraire la version depuis le tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # 5. Rendre le script packaging exécutable
+      - name: Rendre le script exécutable
+        run: chmod +x scripts/package.sh
+
+      # 6. Construire le zip
+      - name: Construire le plugin
+        run: scripts/package.sh "${{ steps.version.outputs.version }}"
+
+      # 7. Vérifier que les fichiers existent
+      - name: Vérifier les fichiers générés
+        run: ls -lh .
+
+      # 8. Calculer le checksum
+      - name: Calculer le checksum
+        id: checksum
+        run: |
+          CHECKSUM=$(md5sum MediaRetentionGuardian_v${{ steps.version.outputs.version }}.zip | awk '{print $1}')
+          echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
+
+      # 9. Mettre à jour le manifest.json
+      - name: Mettre à jour manifest.json
+        run: |
+          jq --arg v "${{ steps.version.outputs.version }}" \
+             --arg c "${{ steps.checksum.outputs.checksum }}" \
+             '.[] |= .versions = (.versions + [{
+                "version": $v,
+                "targetAbi": "10.10.0.0",
+                "framework": "net8.0",
+                "changelog": "- Release version \($v)",
+                "sourceUrl": "https://github.com/${{ github.repository }}/releases/download/v\($v)/MediaRetentionGuardian_v\($v).zip",
+                "thumb": "https://raw.githubusercontent.com/${{ github.repository }}/main/Jellyfin.Plugin.MediaRetentionGuardian/thumb.png",
+                "checksum": $c
+             }])' manifest.json > manifest.tmp && mv manifest.tmp manifest.json
+
+      # 10. Afficher manifest.json (debug)
+      - name: Afficher manifest.json
+        run: cat manifest.json
+
+      # 11. Publier les fichiers dans la Release
+      - name: Publier dans la Release GitHub
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            MediaRetentionGuardian_v${{ steps.version.outputs.version }}.zip
+            manifest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 12. Vérifier les assets publiés
+      - name: Vérifier les assets de la release
+        run: |
+          gh release view v${{ steps.version.outputs.version }} --json assets --jq '.assets[].name'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
